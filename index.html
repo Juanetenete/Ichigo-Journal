@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<title>Ichigo Journal V5</title>
+
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+
+<meta name="theme-color" content="#f3ead8">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Ichigo Journal">
+<meta name="description" content="Journal personal de hábitos, reflexión y crecimiento">
+
+<style>
+:root{
+--paper:#f3ead8;--line:#cdbfa8;
+--green:#86b96b;--yellow:#e8c96c;--red:#d97f7f;--blue:#7eb6da;--purple:#ab8ad9;
+}
+body{
+font-family:system-ui,sans-serif;
+background:
+radial-gradient(circle at 15% 20%,rgba(120,90,60,.08),transparent 18%),
+radial-gradient(circle at 80% 70%,rgba(120,90,60,.06),transparent 22%),
+repeating-linear-gradient(0deg,transparent,transparent 34px,rgba(80,60,40,.03) 35px),
+var(--paper);
+padding:20px;color:#2d2d2d;
+}
+.card{background:rgba(250,244,232,.88);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px}
+table{width:100%;border-collapse:collapse}
+th,td{border:1px solid var(--line);padding:8px}
+.habit{text-align:left;font-weight:600}
+.cell{cursor:pointer;text-align:center}
+.square{width:42px;height:42px;margin:auto;border-radius:8px;border:2px solid #b7aa92;background:#efe8da}
+button{padding:8px 12px;cursor:pointer}
+input,textarea,select{width:100%;padding:8px;margin:5px 0;box-sizing:border-box}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);justify-content:center;align-items:center}
+.box{background:white;padding:18px;border-radius:14px;width:min(700px,92vw);max-height:90vh;overflow:auto}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+</style>
+</head>
+<body>
+
+<div class="card">
+<h1>一期一会</h1>
+<p><strong>Ichigo Ichie</strong> · Cada momento ocurre una sola vez.</p>
+<p>Vive el presente con gratitud, atención y crecimiento constante.</p>
+<div class="row">
+<button onclick="changeWeek(-1)">◀ Semana anterior</button>
+<strong id="weekLabel"></strong>
+<button onclick="changeWeek(1)">Semana siguiente ▶</button>
+</div>
+</div>
+
+<div class="card">
+<input id="newHabit" placeholder="Nueva meta semanal">
+<button onclick="addHabit()">Añadir meta</button>
+</div>
+
+<div id="calendar"></div>
+
+<div class="card">
+<h3>Reflexión semanal</h3>
+<input id="energy" type="number" min="1" max="10" placeholder="Energía (1-10)">
+<input id="discipline" type="number" min="1" max="10" placeholder="Disciplina (1-10)">
+<input id="mood" type="number" min="1" max="10" placeholder="Estado de ánimo (1-10)">
+<textarea id="reflection" placeholder="¿Qué aprendí? ¿Qué agradezco? ¿Qué mejoraré?"></textarea>
+</div>
+
+<div id="modal" class="modal">
+<div class="box">
+<h3 id="modalTitle"></h3>
+
+<select id="status">
+<option value="">Sin marcar</option>
+<option value="green">🟩 Cumplido</option>
+<option value="yellow">🟨 Cumplido a medias</option>
+<option value="red">🟥 No cumplido</option>
+<option value="blue">🟦 Excepcional</option>
+<option value="purple">🟪 Descanso</option>
+</select>
+
+<div id="exerciseFields" style="display:none">
+<input id="muscle" placeholder="Músculo">
+<textarea id="exercises" placeholder="Ejercicios"></textarea>
+<input id="weight" placeholder="Peso">
+</div>
+
+<textarea id="note" placeholder="Notas"></textarea>
+
+<button onclick="saveCell()">Guardar</button>
+<button onclick="closeModal()">Cerrar</button>
+</div>
+</div>
+
+<script>
+const COLORS={green:"#86b96b",yellow:"#e8c96c",red:"#d97f7f",blue:"#7eb6da",purple:"#ab8ad9"};
+
+const DEFAULTS=[
+"Ser agradecido","Ejercicio 40m","Scrollear < 1h 50m","Comer bien",
+"Leer 30m","Dormir bien","Ser amable","Estar presente",
+"Hacer algo incómodo","Estudiar 40m","Ser ordenado"
+];
+
+let weekOffset=0;
+let currentCell="";
+
+function db(){return JSON.parse(localStorage.getItem("ichigo_v5")||"{}");}
+function saveDb(d){localStorage.setItem("ichigo_v5",JSON.stringify(d));}
+
+function weekKey(){
+ let d=new Date();
+ d.setDate(d.getDate()+weekOffset*7);
+ let monday=new Date(d);
+ monday.setDate(d.getDate()-((d.getDay()+6)%7));
+ return monday.toISOString().slice(0,10);
+}
+
+function getHabits(){
+ const d=db();
+ const key="habits_"+weekKey();
+ if(!d[key]){
+   d[key]=[...DEFAULTS];
+   saveDb(d);
+ }
+ return d[key];
+}
+
+function render(){
+ document.getElementById("weekLabel").textContent="Semana: "+weekKey();
+
+ const data=db();
+ let html="<div class='card'><table><tr><th>Meta</th><th>L</th><th>M</th><th>X</th><th>J</th><th>V</th><th>S</th><th>D</th><th></th></tr>";
+
+ getHabits().forEach((habit,row)=>{
+   html += "<tr><td class='habit'>"+habit+"</td>";
+   for(let day=0;day<7;day++){
+      const id=weekKey()+"_"+row+"_"+day;
+      const saved=data[id]||{};
+      const color=COLORS[saved.status] || "#efe8da";
+
+      html += `<td class="cell" onclick="openCell('${id}','${habit.replace(/'/g,"")}')">
+      <div class="square" style="background:${color}"></div></td>`;
+   }
+   html += `<td><button onclick="deleteHabit(${row})">🗑</button></td></tr>`;
+ });
+
+ html += "</table></div>";
+ document.getElementById("calendar").innerHTML=html;
+
+ const wk=data["week_"+weekKey()]||{};
+ document.getElementById("energy").value=wk.energy||"";
+ document.getElementById("discipline").value=wk.discipline||"";
+ document.getElementById("mood").value=wk.mood||"";
+ document.getElementById("reflection").value=wk.reflection||"";
+}
+
+function openCell(id,habit){
+ currentCell=id;
+ const saved=db()[id]||{};
+
+ document.getElementById("modal").style.display="flex";
+ document.getElementById("modalTitle").textContent=habit;
+ document.getElementById("status").value=saved.status||"";
+ document.getElementById("note").value=saved.note||"";
+ document.getElementById("muscle").value=saved.muscle||"";
+ document.getElementById("exercises").value=saved.exercises||"";
+ document.getElementById("weight").value=saved.weight||"";
+
+ document.getElementById("exerciseFields").style.display =
+ habit.includes("Ejercicio") ? "block" : "none";
+}
+
+function saveCell(){
+ const data=db();
+
+ data[currentCell]={
+   status: document.getElementById("status").value,
+   note: document.getElementById("note").value,
+   muscle: document.getElementById("muscle").value,
+   exercises: document.getElementById("exercises").value,
+   weight: document.getElementById("weight").value
+ };
+
+ saveDb(data);
+ closeModal();
+ render();
+}
+
+function closeModal(){
+ document.getElementById("modal").style.display="none";
+}
+
+function addHabit(){
+ const input=document.getElementById("newHabit");
+ const value=input.value.trim();
+ if(!value) return;
+
+ const data=db();
+ const key="habits_"+weekKey();
+ data[key]=getHabits();
+ data[key].push(value);
+ saveDb(data);
+
+ input.value="";
+ render();
+}
+
+function deleteHabit(index){
+ const data=db();
+ const key="habits_"+weekKey();
+ data[key]=getHabits().filter((_,i)=>i!==index);
+ saveDb(data);
+ render();
+}
+
+function changeWeek(n){
+ weekOffset+=n;
+ render();
+}
+
+["energy","discipline","mood","reflection"].forEach(id=>{
+ document.addEventListener("input",e=>{
+   if(e.target.id!==id) return;
+   const data=db();
+   data["week_"+weekKey()]={
+     energy:document.getElementById("energy").value,
+     discipline:document.getElementById("discipline").value,
+     mood:document.getElementById("mood").value,
+     reflection:document.getElementById("reflection").value
+   };
+   saveDb(data);
+ });
+});
+
+render();
+
+// Registro del Service Worker para PWA
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("./service-worker.js")
+      .then(() => {
+        console.log("PWA activa");
+      })
+      .catch(err => {
+        console.error("Error Service Worker:", err);
+      });
+  });
+}
+</script>
+</body>
+</html>
